@@ -78,25 +78,66 @@ def DeleteUser():
           rewrite.close
           shutil.copy("rewrite.txt","userfile.txt")
     except ValueError:
-        print("Nobody left in chatroom...")
-        sys.exit()
+        pass
+        DeleteUser()
 
-def HBeat(user):
+def PrintTable(userlist,userlist1):
+        ts = time.time()
+        st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+        print(st+"\n")
+        print("total users over time:\n")
+        print (userlist)
+        print ("active users:\n")
+        print (userlist1)
+        print ("users that have left:\n")
+        print (list(set(userlist)-set(userlist1)))
+        print("\n")
 
-    hostname=(socket.gethostname())
+def UserTable():
 
-    ADV_GRP = '224.1.1.8'
-    ADV_PORT = 5008
+        MCAST_GRP = '224.1.1.8'
+        MCAST_PORT = 5008
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(('', MCAST_PORT))  # use MCAST_GRP instead of '' to listen only
+                                     # to MCAST_GRP, not all groups on MCAST_PORT
+        mreq = struct.pack("4sl", socket.inet_aton(MCAST_GRP), socket.INADDR_ANY)
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 32)
-    i=0
-    while i < 5:
-        useradv=("{user}".format(user=user)+"@"+hostname)
-        useradv=bytes(useradv, "ascii")
-        sock.sendto(useradv, (ADV_GRP, ADV_PORT))
-        i=i+1
-        time.sleep(.1)
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+
+        userlist1=[]
+        userlist=[]
+
+        while True:
+            if len(userlist1) > 0:
+                who=open('who','w')
+                ts = time.time()
+                st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+                who.write(st+"\n")
+                who.write("total users over time:\n")
+                who.write(str(userlist)+"\n")
+                who.write("active users:\n")
+                who.write(str(userlist1)+"\n")
+                who.write("users that have left (since you logged in):\n")
+                who.write(str(list(set(userlist)-set(userlist1))))
+                who.write("\n")
+                who.close()
+            i=0
+            try:
+                userlist1=[]
+            except:
+                pass
+            while i < (len(userlist1)+1)*6:
+                list_user=sock.recv(10240)
+                dcduser=list_user.decode("utf-8")
+                userlist.append(dcduser)
+                userlist=set(userlist)
+                userlist=list(userlist)
+                userlist1.append(dcduser)
+                userlist1=set(userlist1)
+                userlist1=list(userlist1)
+                i=i+1
+
 def InfHBeat():
     user=open("localuser","r")
     user=user.read()
@@ -134,30 +175,23 @@ def Tx(msg, user):
     z.start()
 
     while True:
-        useradv=("{user}".format(user=user)+"@"+hostname)
-        useradv=bytes(useradv, "ascii")
-        sock.sendto(useradv, (ADV_GRP, ADV_PORT))
-
         while True:
-            HBeat(user)
             msg=input(": ")
             if msg == "exit":
-                left="{user} has left the chatroom".format(user=user)
+                user_d=("{user}".format(user=user)+"@"+hostname)
+                left="{user} has left the chatroom".format(user=user_d)
                 left=bytes(left,"ascii")
                 sock.sendto(left, (MCAST_GRP, MCAST_PORT))
                 del_user=user
                 del_user=bytes(del_user,"ascii")
                 sock.sendto(del_user, (DEL_GRP, DEL_PORT))
                 sys.exit()
-            if msg == "who":
-                print("Active users are: \n")
-                HBeat(user)
-                time.sleep(1)
-                who=open("userfile.txt","r")
+            if msg == "#who":
+                who=open("who","r")
                 for lines in who:
                     print(lines)
                 break
-            if msg == "send":
+            if msg == "#send":
                 name=""
                 name=input("Filename?: ")
                 fn=open(name, "rb")
@@ -165,16 +199,19 @@ def Tx(msg, user):
                     lines=bytes(lines)
                     sock.sendto(lines, (MCAST_GRP, MCAST_PORT))
                 fn.close()
-            if msg == "help":
+                break
+            if msg == "#help":
                 hf=open("helpfile", "r")
                 for lines in hf:
                     print(lines)
                 hf.close()
-            if msg == "log":
+                break
+            if msg == "#log":
                 cl=open("chatlog.log", "r")
                 for lines in cl:
                     print(lines)
                 cl.close()
+                break
 
 
             else:
@@ -182,8 +219,6 @@ def Tx(msg, user):
                 msg=user+'@'+hostname+"# "+'"'+msg+'"'
                 msg=bytes(msg, "ascii")
                 sock.sendto(msg, (MCAST_GRP, MCAST_PORT))
-                HBeat(user)
-                break
 
 
     sys.exit()
@@ -207,7 +242,11 @@ if __name__ == '__main__':
   localuser.write(user)
   localuser.close()
 
-  n = multiprocessing.Process(target=DeleteUser)
+  m = multiprocessing.Process(target=DeleteUser)
+  jobs.append(m)
+  m.start()
+
+  n = multiprocessing.Process(target=UserTable)
   jobs.append(n)
   n.start()
 
@@ -218,10 +257,6 @@ if __name__ == '__main__':
   p = multiprocessing.Process(target=Rx)
   jobs.append(p)
   p.start()
-
-  r = multiprocessing.Process(target=HBeat(user))
-  jobs.append(r)
-  r.start()
 
   q = multiprocessing.Process(target=Tx(msg, user))
   jobs.append(q)
