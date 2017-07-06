@@ -12,9 +12,7 @@ import struct
 import time
 import sys
 import multiprocessing
-import shutil
 import datetime
-import subprocess
 
 """
 fn notifies of first entry into chatroom by looking for users not in list
